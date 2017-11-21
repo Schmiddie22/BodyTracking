@@ -44,8 +44,12 @@ namespace {
 
 	//tracked data of 5 tracker
 	const int numOfEndEffectorsToRead = 5;
-	const char* initialTransFilename = "initTransAndRot_1511178843.csv";
-	const char* positionDataFilename = "positionData_1511178843.csv";
+	//const char* initialTransFilename = "initTransAndRot_1511178843.csv";
+	//const char* positionDataFilename = "positionData_1511178843.csv";
+
+	//tracked data of 5 tracker // false initial rotation of backbone
+	const char* initialTransFilename = "initTransAndRot_1511180093.csv";
+	const char* positionDataFilename = "positionData_1511180093.csv";
 
 	double startTime;
 	double lastTime;
@@ -125,6 +129,8 @@ namespace {
 	const int backBoneIndex = 4;//3;
 	const int renderTrackerOrTargetPosition = 1;		// 0 - dont render, 1 - render desired position
 
+	bool backBoneCalibrated = false;
+
 	void renderTracker() {
 		switch (renderTrackerOrTargetPosition) {
 		case 0:
@@ -175,9 +181,11 @@ namespace {
 			endEffector->offsetPosition = vec3(0, 0, 0);
 
 			if (boneIndex == backBoneIndex) {
-				endEffector->offsetPosition = vec3(0, 0.05f, 0);
-				endEffector->offsetRotation.rotate(Quaternion(vec3(1, 0, 0), Kore::pi * 1.57)); //red
+				endEffector->offsetPosition = vec3(0, 0.2f, -0.1f);
+				endEffector->offsetRotation.rotate(Quaternion(vec3(1, 0, 0), Kore::pi * -0.43f)); //red  //1.57
 				endEffector->offsetRotation.rotate(Quaternion(vec3(0, 1, 0), Kore::pi));
+
+
 			}
 			else if (boneIndex == leftHandBoneIndex) {
 				endEffector->offsetPosition = vec3(0.02f, 0.02f, 0);
@@ -250,15 +258,57 @@ namespace {
 		avatar->setDesiredPositionAndOrientation(endEffector->boneIndex, finalPos, finalRot);
 	}
 
+	bool calibrateOrientation(Kore::Quaternion& trackerRotation, const int boneIndex) {
+		float roll = 0.0f;
+		float pitch = 0.0f;
+		float yaw = 0.0f;
+		float rollCorrection = 0.0f;
+		float pitchCorrection = 0.0f;
+		float yawCorrection = 0.0f;
+
+		//get current rotation of tracker
+		const Kore::Quaternion quat = trackerRotation;
+		RotationUtility::quatToEuler(&quat, &roll, &pitch, &yaw);
+		log(Info, "roll: %f", roll / Kore::pi);
+		log(Info, "pitch: %f", pitch / Kore::pi);
+		log(Info, "yaw: %f", yaw / Kore::pi);
+		log(Info, "yaw pi: %f", yaw);
+		log(Info, "yaw diff: %f", 1.0f - Kore::abs(yaw / Kore::pi));
+		log(Info, "yaw diff pi: %f", (1.0f - Kore::abs(yaw / Kore::pi)) * Kore::pi);
+
+		//calculate difference to referenceRotation and adjust rotation
+		if (boneIndex == backBoneIndex) {
+			rollCorrection = 0.0f;
+			pitchCorrection = 0.0f;
+			yawCorrection = - (1.0f - Kore::abs(yaw / Kore::pi)) * Kore::pi;
+
+			log(Info, "pi: %f", yawCorrection + yaw);
+
+
+			//set new offsets
+			back->offsetRotation.rotate(Quaternion(vec3(0, 1, 0), -yawCorrection));
+
+		}
+
+		//RotationUtility::eulerToQuat(rollCorrection, pitchCorrection, yawCorrection, &calculatedOffsets);
+
+		log(Info, "yawCorrected: %f", (yaw + yawCorrection) / Kore::pi);
+
+		return true;
+	}
+
 	void setBackBonePosition(Kore::vec3& desPosition, Kore::Quaternion& desRotation) {
 		if (logData) {
 			logger->saveData(desPosition, desRotation);
 		}
+		//if (!backBoneCalibrated)
+		//	backBoneCalibrated = calibrateOrientation(desRotation, backBoneIndex);
 
 		applyOffset(back, desPosition, desRotation);
-		
+
 		initRot = desRotation;
 		initRot.normalize();
+
 		initRotInv = initRot.invert();
 		avatar->M = mat4::Translation(desPosition.x(), 0, desPosition.z()) * initRot.matrix().Transpose();
 		initTransInv = avatar->M.Invert();
